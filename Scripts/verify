@@ -59,7 +59,7 @@ fi
 
 if [ "$1" = "clean" ]
 then
-	rm -f pan.? pan model model.trail _modex* *.M *.nlut _spin_nvr.tmp
+	rm -f pan.? pan model model.trail _modex* *.M *.nlut _spin_nvr.tmp .pan_cache
 	exit 0
 fi
 
@@ -100,9 +100,44 @@ then	rm -f model*.trail pan.?
 	then	echo ""
 		echo "	Compile and Run:"
 		echo "	================"
-		echo "sh _modex_.run $pan_run"
 	fi
-	sh _modex_.run $pan_run
+	# --- pan binary cache ---
+	# Modex runs spin -a + gcc each time; we short-circuit gcc if model is unchanged.
+	# Cache dir stores: pan binary + model hash across runs.
+	_cache_dir=".modex_cache"
+	mkdir -p "$_cache_dir"
+
+	if [ -f model ] && spin -a model 2>/dev/null && [ -f pan.c ]
+	then
+		model_hash=$(tail -n +3 model | md5 -q 2>/dev/null || tail -n +3 model | md5sum 2>/dev/null | cut -d' ' -f1)
+		cached_hash=""
+		if [ -f "$_cache_dir/hash" ]; then cached_hash=$(cat "$_cache_dir/hash"); fi
+
+		if [ "$model_hash" = "$cached_hash" ] && [ -x "$_cache_dir/pan" ]
+		then
+			if [ $verbose -eq 1 ]
+			then echo "	[cache hit]  pan unchanged — skipped gcc recompile"
+			fi
+			cp "$_cache_dir/pan" pan
+		else
+			if [ $verbose -eq 1 ]
+			then echo "	[cache miss] compiling pan.c..."
+			fi
+			gcc -w -O2 -DVECTORSZ=1024 -DMEMLIM=15000 -DHC4 -o pan pan.c
+			if [ -x pan ]
+			then
+				cp pan "$_cache_dir/pan"
+				echo "$model_hash" > "$_cache_dir/hash"
+			fi
+		fi
+		./pan $pan_run -n -m10000 -w29
+	else
+		# fallback for c_code / c_state models
+		if [ $verbose -eq 1 ]
+		then echo "sh _modex_.run $pan_run"
+		fi
+		sh _modex_.run $pan_run
+	fi
 else
 	exit 1
 fi

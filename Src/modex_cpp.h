@@ -3,7 +3,7 @@
 // and in generated shell scripts _modex_.run, _modex_.cln
 
 #ifndef CC	// compilation
-	#define CC	"gcc -w -g"      // -DCC="cl /nologo"
+	#define CC	"gcc -w -O2"     // -DCC="cl /nologo"
 #endif
 #ifndef CPP	// preprocessing
 	#define CPP	"gcc -E -x c" // -DCPP="cl /nologo /DMODEX /EP"
