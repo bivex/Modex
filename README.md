@@ -244,8 +244,16 @@ Modex/
 ├── Manual/               # User manual (MANUAL.html) and harness tutorials
 ├── Examples/             # Practical C code extraction examples
 └── Scripts/              # Automated verification helper scripts
-    └── verify            # Model extraction and Spin execution wrapper
+    ├── verify            # Model extraction and Spin execution wrapper
+    └── modex-gen         # Automatic test-harness (.prx) generator tool
 ```
+
+### 🤖 Automatic Harness Generation (`modex-gen`):
+To automatically generate a `.prx` harness for any C source file:
+```bash
+Scripts/modex-gen my_code.c -o my_code.prx --threads 2
+```
+It extracts global state variables, function signatures, and sets up a parallel harness calling process template.
 
 ---
 

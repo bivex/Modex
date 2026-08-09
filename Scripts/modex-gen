@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""
+modex-gen: Automated Test-Harness (.prx) Generator for Modex
+Usage: modex-gen <file.c> [-o output.prx] [--threads N]
+"""
+
+import sys
+import os
+import re
+import argparse
+
+def parse_c_file(filename):
+    with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+
+    # Remove C & C++ comments
+    clean_content = re.sub(r'//.*?\n|/\*.*?\*/', '', content, flags=re.DOTALL)
+
+    # Extract global variable names
+    var_pattern = r'^(?:volatile\s+)?(?:unsigned\s+|signed\s+)?(?:int|char|long|short|uint|size_t|double|float|bool|struct\s+\w+)\s+([a-zA-Z_]\w*)\s*(?:=\s*[^;]+)?;'
+    globals_found = re.findall(var_pattern, clean_content, flags=re.MULTILINE)
+
+    # Extract function declarations & definitions
+    func_pattern = r'^(?:void|int|char|long|uint|unsigned|void\*|bool)\s+([a-zA-Z_]\w*)\s*\(([^)]*)\)\s*\{'
+    funcs_found = re.findall(func_pattern, clean_content, flags=re.MULTILINE)
+
+    # Exclude main function
+    funcs_found = [f for f in funcs_found if f[0] != 'main']
+
+    return globals_found, funcs_found
+
+def generate_harness(c_filename, output_prx, num_threads=2):
+    globals_list, funcs_list = parse_c_file(c_filename)
+    basename = os.path.basename(c_filename)
+
+    var_section = "    " + ",\n    ".join(globals_list) if globals_list else "    /* Add state variables to track */"
+    
+    calls_str = ""
+    if funcs_list:
+        for fname, params in funcs_list:
+            if "void" in params or not params.strip():
+                calls_str += f"        {fname}();\n"
+            else:
+                calls_str += f"        {fname}(_pid + 1);\n"
+    else:
+        calls_str = "        /* Call target functions here */\n"
+
+    harness_code = f"""%F {basename}
+%%
+/* Auto-generated Modex Test Harness (.prx) for {basename} */
+
+VAR {{
+{var_section}
+}}
+
+%P
+/* Parallel verification harness */
+active [{num_threads}] proctype harness() {{
+{calls_str}}}
+
+/* LTL Safety Property Placeholder */
+/* ltl safety {{ [] (state != -1) }} */
+%
+"""
+
+    with open(output_prx, 'w', encoding='utf-8') as f:
+        f.write(harness_code)
+
+    print(f"[+] Generated Modex harness: {output_prx}")
+    print(f"    - Extracted variables: {', '.join(globals_list) if globals_list else 'None'}")
+    print(f"    - Extracted functions: {', '.join([f[0] for f in funcs_list]) if funcs_list else 'None'}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Modex Test-Harness (.prx) Generator")
+    parser.add_argument("c_file", help="Path to C source file")
+    parser.add_argument("-o", "--output", help="Output .prx filename")
+    parser.add_argument("-t", "--threads", type=int, default=2, help="Number of concurrent harness threads (default: 2)")
+
+    args = parser.parse_args()
+
+    if not os.path.isfile(args.c_file):
+        print(f"Error: File '{args.c_file}' does not exist.")
+        sys.exit(1)
+
+    output_prx = args.output if args.output else os.path.splitext(args.c_file)[0] + ".prx"
+    generate_harness(args.c_file, output_prx, args.threads)
+
+if __name__ == "__main__":
+    main()
