@@ -107,7 +107,7 @@ do_recur(treenode *root, int level)
         return;
 
     case LEAF_T:
-        leaf = (leafnode *) root;
+        leaf = (leafnode *) (void *) root;
         switch (leaf->hdr.type) {
         case TN_LABEL:
             if (leaf->hdr.tok == DEFLT)
@@ -174,7 +174,7 @@ do_recur(treenode *root, int level)
         break;
 
     case IF_T:
-        ifn = (if_node *) root;
+        ifn = (if_node *) (void *) root;
         switch (ifn->hdr.type) {
 
         case TN_IF:
@@ -208,7 +208,7 @@ do_recur(treenode *root, int level)
         break;
 
     case FOR_T:
-        forn = (for_node *) root;
+        forn = (for_node *) (void *) root;
         switch (forn->hdr.type) {
 
         case TN_FUNC_DEF:
@@ -219,7 +219,16 @@ do_recur(treenode *root, int level)
             do_recur(forn->incr, level);
             strcat(PBuf, "\n");
             do_recur(forn->stemnt, level);
-            strcat(PBuf, "\n");
+            break;
+
+        case TN_FUNC_DECL:
+            do_recur(forn->init, level);
+            do_recur(forn->test, level);
+            if (forn->test->hdr.which == LEAF_T)
+                strcat(PBuf, "()");
+            do_recur(forn->incr, level);
+            do_recur(forn->stemnt, level);
+            strcat(PBuf, ";\n");
             break;
 
         case TN_FOR:
@@ -279,6 +288,7 @@ do_recur(treenode *root, int level)
             break;
 
         case TN_ARRAY_DECL:
+        case TN_INDEX:
             do_recur(root->lnode, level);
             strcat(PBuf, "[");
             do_recur(root->rnode, level);
@@ -286,6 +296,7 @@ do_recur(treenode *root, int level)
             break;
 
         case TN_EXPR_LIST:
+        case TN_PARAM_LIST:
             do_recur(root->lnode, level);
             if (root->rnode)
               strcat(PBuf, ",");
@@ -316,13 +327,6 @@ do_recur(treenode *root, int level)
             do_recur(root->rnode, level);
             break;
 
-        case TN_PARAM_LIST:
-            do_recur(root->lnode, level);
-            if (root->rnode)
-              strcat(PBuf, ",");
-            do_recur(root->rnode, level);
-            break;
-
         case TN_IDENT_LIST:
             do_recur(root->lnode, level);
             do_recur(root->rnode, level);
@@ -346,20 +350,11 @@ do_recur(treenode *root, int level)
             break;
 
         case TN_DECL_LIST:
+        case TN_DECLS:
             do_recur(root->lnode, level);
             if ((root->rnode
 	    && (root->rnode->hdr.type == TN_IDENT))
-            || (root->rnode->lnode
-            && ((root->rnode->lnode->hdr.type == TN_IDENT)
-            || (root->rnode->lnode->hdr.type == TN_PNTR))) )
-              strcat(PBuf, ",");
-            do_recur(root->rnode, level);
-            break;
-
-        case TN_DECLS:
-            do_recur(root->lnode, level);
-            if ((root->rnode && (root->rnode->hdr.type == TN_IDENT))
-            || (root->rnode->lnode
+            || (root->rnode && root->rnode->lnode
             && ((root->rnode->lnode->hdr.type == TN_IDENT)
             || (root->rnode->lnode->hdr.type == TN_PNTR))) )
               strcat(PBuf, ",");
@@ -430,7 +425,7 @@ do_recur(treenode *root, int level)
             break;
 
         case TN_OBJ_DEF:
-            leaf = (leafnode *) root;
+            leaf = (leafnode *) (void *) root;
             strcat(PBuf, toksym(leaf->hdr.tok,1));
             do_recur(root->lnode, level);
             strcat(PBuf, " {\n");
@@ -439,7 +434,7 @@ do_recur(treenode *root, int level)
             break;
 
         case TN_OBJ_REF:
-            leaf = (leafnode *) root;
+            leaf = (leafnode *) (void *) root;
             strcat(PBuf, toksym(leaf->hdr.tok,1));
             do_recur(root->lnode, level);
             strcat(PBuf, " ");
@@ -459,7 +454,7 @@ do_recur(treenode *root, int level)
             strcat(PBuf, toksym(root->hdr.tok,1));
             if ((root->hdr.tok == RETURN)
 	    || (root->hdr.tok == GOTO))
-               do_recur(root->lnode, level);
+                do_recur(root->lnode, level);
             break;
 
         case TN_SWITCH:
@@ -467,13 +462,6 @@ do_recur(treenode *root, int level)
             do_recur(root->lnode, level);
             strcat(PBuf, ")\n");
             do_recur(root->rnode, level+1);
-            break;
-
-        case TN_INDEX:
-            do_recur(root->lnode, level);
-            strcat(PBuf, "[");
-            do_recur(root->rnode, level);
-            strcat(PBuf, "]");
             break;
 
         case TN_DEREF:
@@ -531,6 +519,7 @@ do_recur(treenode *root, int level)
                   strcat(PBuf, ")");
                   break;
                 }
+                /* FALLTHROUGH */
 
               default:
                 strcat(PBuf, "(");
