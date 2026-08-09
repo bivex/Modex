@@ -1,0 +1,3 @@
+[submodule "Examples/spscq"]
+	path = Examples/spscq
+	url = https://github.com/p-id/spscq.git
