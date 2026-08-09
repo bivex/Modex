@@ -1,0 +1,24 @@
+%F real_queue.c
+%%
+/* Auto-generated Modex Test Harness (.prx) for real_queue.c
+ * Parser engine: C99 AST (pycparser)
+ */
+
+VAR {
+    buffer,
+    head,
+    tail,
+    count
+}
+
+%P
+/* Parallel verification harness calling target C functions */
+active [2] proctype harness() {
+        push(_pid + 1);
+        pop();
+        producer_consumer();
+}
+
+/* LTL Safety Property Placeholder */
+/* ltl safety { [] (state != -1) } */
+%
