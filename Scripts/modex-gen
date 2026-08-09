@@ -106,15 +106,29 @@ def parse_c_ast(filename):
     return globals_found, funcs_list, "Regex Parser"
 
 
-def generate_harness(c_filename, output_prx, num_threads=2):
-    globals_list, funcs_list, parser_used = parse_c_ast(c_filename)
-    basename = os.path.basename(c_filename)
+def generate_harness(c_filenames, output_prx, num_threads=2):
+    all_globals = []
+    all_funcs = []
+    f_directives = []
 
-    var_section = "    " + ",\n    ".join(globals_list) if globals_list else "    /* Add state variables to track */"
+    for c_file in c_filenames:
+        globals_list, funcs_list, parser_used = parse_c_ast(c_file)
+        basename = os.path.basename(c_file)
+        f_directives.append(f"%F {basename}")
+        
+        for g in globals_list:
+            if g not in all_globals:
+                all_globals.append(g)
+        for f in funcs_list:
+            if f not in all_funcs:
+                all_funcs.append(f)
+
+    f_header = "\n".join(f_directives)
+    var_section = "    " + ",\n    ".join(all_globals) if all_globals else "    /* Add state variables to track */"
     
     calls_str = ""
-    if funcs_list:
-        for fname, params in funcs_list:
+    if all_funcs:
+        for fname, params in all_funcs:
             if not params or (len(params) == 1 and params[0] in ["void", ""]):
                 calls_str += f"        {fname}();\n"
             else:
@@ -123,10 +137,10 @@ def generate_harness(c_filename, output_prx, num_threads=2):
     else:
         calls_str = "        /* Call target C functions here */\n"
 
-    harness_code = f"""%F {basename}
+    targets_str = ", ".join([os.path.basename(f) for f in c_filenames])
+    harness_code = f"""{f_header}
 %%
-/* Auto-generated Modex Test Harness (.prx) for {basename}
- * Parser engine: {parser_used}
+/* Auto-generated Multi-File Modex Test Harness (.prx) for {targets_str}
  */
 
 VAR {{
@@ -140,32 +154,34 @@ active [{num_threads}] proctype harness() {{
 
 /* LTL Safety Property Placeholder */
 /* ltl safety {{ [] (state != -1) }} */
-%
 """
 
     with open(output_prx, 'w', encoding='utf-8') as f:
         f.write(harness_code)
 
-    print(f"[+] Generated Modex harness ({parser_used}): {output_prx}")
-    print(f"    - Extracted variables ({len(globals_list)}): {', '.join(globals_list) if globals_list else 'None'}")
-    print(f"    - Extracted functions ({len(funcs_list)}): {', '.join([f[0] for f in funcs_list]) if funcs_list else 'None'}")
+    print(f"[+] Generated Modex multi-file harness: {output_prx}")
+    print(f"    - Target C files: {targets_str}")
+    print(f"    - Extracted variables ({len(all_globals)}): {', '.join(all_globals) if all_globals else 'None'}")
+    print(f"    - Extracted functions ({len(all_funcs)}): {', '.join([f[0] for f in all_funcs]) if all_funcs else 'None'}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Modex Test-Harness (.prx) Generator (C99 AST)")
-    parser.add_argument("c_file", help="Path to C source file")
+    parser = argparse.ArgumentParser(description="Modex Test-Harness (.prx) Generator for single or multiple C files")
+    parser.add_argument("c_files", nargs="+", help="Path to one or more C source files")
     parser.add_argument("-o", "--output", help="Output .prx filename")
     parser.add_argument("-t", "--threads", type=int, default=2, help="Number of concurrent harness threads (default: 2)")
 
     args = parser.parse_args()
 
-    if not os.path.isfile(args.c_file):
-        print(f"Error: File '{args.c_file}' does not exist.")
-        sys.exit(1)
+    for c_file in args.c_files:
+        if not os.path.isfile(c_file):
+            print(f"Error: File '{c_file}' does not exist.")
+            sys.exit(1)
 
-    output_prx = args.output if args.output else os.path.splitext(args.c_file)[0] + ".prx"
-    generate_harness(args.c_file, output_prx, args.threads)
+    output_prx = args.output if args.output else os.path.splitext(args.c_files[0])[0] + ".prx"
+    generate_harness(args.c_files, output_prx, args.threads)
 
 
 if __name__ == "__main__":
     main()
+

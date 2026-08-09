@@ -1,20 +1,14 @@
 %F spsc_test.c
 %%
-/* Auto-generated Modex Test Harness (.prx) for spsc_test.c
- * Parser engine: Regex Parser
- */
-
 VAR {
-    /* Add state variables to track */
+    q
 }
 
 %P
-/* Parallel verification harness calling target C functions */
-active [2] proctype harness() {
-        test_producer();
-        test_consumer();
+active proctype producer() {
+    c_code { test_producer(); };
 }
 
-/* LTL Safety Property Placeholder */
-/* ltl safety { [] (state != -1) } */
-%
+active proctype consumer() {
+    c_code { test_consumer(); };
+}

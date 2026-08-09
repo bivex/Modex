@@ -1,7 +1,5 @@
 #!/bin/sh
 
-# set -v
-
 verbose=1
 modex_args=""
 pan_replay="-C"
@@ -48,7 +46,7 @@ do
 done
 
 if [ $# -eq 0 ]
-then	echo "usage: verify [-n | -p | -E | -A] [file.c | clean]"
+then	echo "usage: verify [-n | -p | -E | -A | -a] [file1.c file2.c ... | clean]"
 	echo " -n	non-verbose"
 	echo " -p	add embedded modex_args"
 	echo " -E	no invalid end-state errors"
@@ -56,48 +54,47 @@ then	echo "usage: verify [-n | -p | -E | -A] [file.c | clean]"
 	echo " -a	acceptance cycles"
 	echo " -m xxx	pass argument xxx to modex"
 	echo " -r xxx	pass argument xxx to pan"
-	echo "	e.g., -E is the same as -r -E"
 	exit 1
+fi
+
+if [ "$1" = "clean" ]
+then
+	rm -f pan.? pan model model.trail _modex* *.M *.nlut _spin_nvr.tmp
+	exit 0
+fi
+
+if [ "$1" = "replay" ]
+then
+	./pan $pan_replay |
+		sed 's;P[^\-]*->;;g' |
+		sed 's;now\.;;g' |
+		grep -v -e req_cll -e exc_cll -e par0_ -e lck_ -e res_ -e ret_
+	exit 0
+fi
+
+# Support running from any directory path
+first_file="$1"
+target_dir=$(dirname "$first_file")
+if [ "$target_dir" != "." ] && [ -d "$target_dir" ]
+then
+	new_args=""
+	for arg in "$@"
+	do
+		new_args="$new_args $(basename "$arg")"
+	done
+	cd "$target_dir" || exit 1
+	set -- $new_args
 fi
 
 if [ $verbose -eq 1 ]
 then
-	case $1 in
-	clean)
-		rm -f pan.? pan model model.trail _modex* *.M *.nlut
-                rm -f _spin_nvr.tmp
-		exit 0
-		;;
-	replay)
-		./pan $pan_replay |
-			sed 's;P[^\-]*->;;g' |
-			sed 's;now\.;;g' |
-			grep -v -e req_cll -e exc_cll -e par0_ -e lck_ -e res_ -e ret_
-		exit 0
-		;;
-	*)
-		echo ""
-		echo "	Extract Model:"
-		echo "	=============="
-		echo modex $modex_args $*
-		;;
-	esac
-
+	echo ""
+	echo "	Extract Model:"
+	echo "	=============="
+	echo modex $modex_args "$@"
 fi
 
-while [ $# -gt 1 ]
-do
-	modex_args="$modex_args $1"
-	shift
-done
-
-if [ -s $1 ]
-then	true
-else	echo "verify: bad file argument $1"
-	exit 1
-fi
-
-if modex $modex_args $1
+if modex $modex_args "$@"
 then	rm -f model*.trail pan.?
 	if [ $verbose -eq 1 ]
 	then	echo ""
@@ -109,6 +106,7 @@ then	rm -f model*.trail pan.?
 else
 	exit 1
 fi
+
 if [ -f model.trail ]
 then
 	if [ $verbose -eq 1 ]
