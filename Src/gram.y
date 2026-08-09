@@ -47,8 +47,8 @@ void *e_malloc(uint);
 %}
 
 /* The next line makes the parser re-entrant. */
-%define api.pure full
-// %pure_parser
+%pure_parser
+
 
 %start program
 

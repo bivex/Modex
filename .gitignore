@@ -1,0 +1,35 @@
+# Modex compiled binaries & build outputs
+/Src/modex
+/Src/gram.c
+/Src/gram.h
+/Src/gram.output
+/Src/gram.tab.c
+/Src/gram.tab.h
+/Src/lexer.c
+/Src/lex.yy.c
+*.o
+*.a
+*.so
+*.dylib
+
+# Modex generated models & lookup tables
+*.M
+*.nlut
+_modex*
+_spin*
+
+# Spin model checker verifier artifacts
+pan
+pan.[chbmto]
+pan.exe
+*.dSYM/
+model
+model*.trail
+_model.pml
+
+# OS & Editor temporary files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
