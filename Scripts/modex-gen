@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-modex-gen: Automated Test-Harness (.prx) Generator for Modex
+modex-gen: Advanced Test-Harness (.prx) Generator for Modex
+Uses pycparser (C99 AST Grammar Parser) with regex fallback.
+
 Usage: modex-gen <file.c> [-o output.prx] [--threads N]
 """
 
@@ -9,28 +11,103 @@ import os
 import re
 import argparse
 
-def parse_c_file(filename):
-    with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
-        content = f.read()
+try:
+    from pycparser import c_parser, c_ast
+    HAS_PYCPARSER = True
+except ImportError:
+    HAS_PYCPARSER = False
 
+
+STANDARD_TYPEDEFS = """
+typedef unsigned int uint;
+typedef unsigned int uint32_t;
+typedef unsigned short uint16_t;
+typedef unsigned char uint8_t;
+typedef int int32_t;
+typedef short int16_t;
+typedef char int8_t;
+typedef unsigned long size_t;
+typedef int bool;
+typedef int pthread_t;
+typedef int pthread_mutex_t;
+typedef int pthread_cond_t;
+"""
+
+def preprocess_c_code(content):
+    """Clean C code for C99 AST parsing."""
     # Remove C & C++ comments
-    clean_content = re.sub(r'//.*?\n|/\*.*?\*/', '', content, flags=re.DOTALL)
+    clean = re.sub(r'//.*?\n', '\n', content)
+    clean = re.sub(r'/\*.*?\*/', '\n', clean, flags=re.DOTALL)
+    
+    # Strip preprocessor directives
+    clean = re.sub(r'#.*?\n', '\n', clean)
+    
+    # Strip GCC extensions
+    clean = re.sub(r'__attribute__\s*\(\([^)]*\)\)', '', clean)
+    clean = re.sub(r'__extension__', '', clean)
+    clean = re.sub(r'\bvolatile\b', '', clean)
+    clean = re.sub(r'\binline\b', '', clean)
+    clean = re.sub(r'\brestrict\b', '', clean)
+    
+    return STANDARD_TYPEDEFS + "\n" + clean
 
-    # Extract global variable names
+
+class C99ASTVisitor(c_ast.NodeVisitor):
+    """AST Visitor to extract global state variables and functions."""
+    def __init__(self):
+        self.global_vars = []
+        self.functions = []
+
+    def visit_FileAST(self, node):
+        for ext in node.ext:
+            if isinstance(ext, c_ast.Decl):
+                if isinstance(ext.type, (c_ast.TypeDecl, c_ast.PtrDecl, c_ast.ArrayDecl)):
+                    if ext.name and ext.name != "main" and not ext.name.startswith("pthread_"):
+                        if ext.name not in self.global_vars:
+                            self.global_vars.append(ext.name)
+            elif isinstance(ext, c_ast.FuncDef):
+                fname = ext.decl.name
+                if fname != "main":
+                    params = []
+                    if ext.decl.type.args:
+                        for p in ext.decl.type.args.params:
+                            if isinstance(p, c_ast.Decl):
+                                params.append(p.name if p.name else "arg")
+                    self.functions.append((fname, params))
+
+
+def parse_c_ast(filename):
+    """Parse C source file using pycparser (C99 AST)."""
+    with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
+        raw_code = f.read()
+
+    clean_code = preprocess_c_code(raw_code)
+
+    if HAS_PYCPARSER:
+        try:
+            parser = c_parser.CParser()
+            ast = parser.parse(clean_code)
+            visitor = C99ASTVisitor()
+            visitor.visit(ast)
+            return visitor.global_vars, visitor.functions, "C99 AST (pycparser)"
+        except Exception as e:
+            # Fall back to regex parser if AST parsing encounters macro errors
+            pass
+
+    # Fallback Regex Parser
+    clean = re.sub(r'//.*?\n|/\*.*?\*/', '', raw_code, flags=re.DOTALL)
     var_pattern = r'^(?:volatile\s+)?(?:unsigned\s+|signed\s+)?(?:int|char|long|short|uint|size_t|double|float|bool|struct\s+\w+)\s+([a-zA-Z_]\w*)\s*(?:=\s*[^;]+)?;'
-    globals_found = re.findall(var_pattern, clean_content, flags=re.MULTILINE)
+    globals_found = re.findall(var_pattern, clean, flags=re.MULTILINE)
 
-    # Extract function declarations & definitions
     func_pattern = r'^(?:void|int|char|long|uint|unsigned|void\*|bool)\s+([a-zA-Z_]\w*)\s*\(([^)]*)\)\s*\{'
-    funcs_found = re.findall(func_pattern, clean_content, flags=re.MULTILINE)
+    funcs_found = re.findall(func_pattern, clean, flags=re.MULTILINE)
+    funcs_list = [(f[0], [p.strip() for p in f[1].split(',') if p.strip()]) for f in funcs_found if f[0] != 'main']
 
-    # Exclude main function
-    funcs_found = [f for f in funcs_found if f[0] != 'main']
+    return globals_found, funcs_list, "Regex Parser"
 
-    return globals_found, funcs_found
 
 def generate_harness(c_filename, output_prx, num_threads=2):
-    globals_list, funcs_list = parse_c_file(c_filename)
+    globals_list, funcs_list, parser_used = parse_c_ast(c_filename)
     basename = os.path.basename(c_filename)
 
     var_section = "    " + ",\n    ".join(globals_list) if globals_list else "    /* Add state variables to track */"
@@ -38,23 +115,26 @@ def generate_harness(c_filename, output_prx, num_threads=2):
     calls_str = ""
     if funcs_list:
         for fname, params in funcs_list:
-            if "void" in params or not params.strip():
+            if not params or (len(params) == 1 and params[0] in ["void", ""]):
                 calls_str += f"        {fname}();\n"
             else:
-                calls_str += f"        {fname}(_pid + 1);\n"
+                arg_list = ", ".join([f"_pid + {i+1}" for i in range(len(params))])
+                calls_str += f"        {fname}({arg_list});\n"
     else:
-        calls_str = "        /* Call target functions here */\n"
+        calls_str = "        /* Call target C functions here */\n"
 
     harness_code = f"""%F {basename}
 %%
-/* Auto-generated Modex Test Harness (.prx) for {basename} */
+/* Auto-generated Modex Test Harness (.prx) for {basename}
+ * Parser engine: {parser_used}
+ */
 
 VAR {{
 {var_section}
 }}
 
 %P
-/* Parallel verification harness */
+/* Parallel verification harness calling target C functions */
 active [{num_threads}] proctype harness() {{
 {calls_str}}}
 
@@ -66,12 +146,13 @@ active [{num_threads}] proctype harness() {{
     with open(output_prx, 'w', encoding='utf-8') as f:
         f.write(harness_code)
 
-    print(f"[+] Generated Modex harness: {output_prx}")
-    print(f"    - Extracted variables: {', '.join(globals_list) if globals_list else 'None'}")
-    print(f"    - Extracted functions: {', '.join([f[0] for f in funcs_list]) if funcs_list else 'None'}")
+    print(f"[+] Generated Modex harness ({parser_used}): {output_prx}")
+    print(f"    - Extracted variables ({len(globals_list)}): {', '.join(globals_list) if globals_list else 'None'}")
+    print(f"    - Extracted functions ({len(funcs_list)}): {', '.join([f[0] for f in funcs_list]) if funcs_list else 'None'}")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Modex Test-Harness (.prx) Generator")
+    parser = argparse.ArgumentParser(description="Modex Test-Harness (.prx) Generator (C99 AST)")
     parser.add_argument("c_file", help="Path to C source file")
     parser.add_argument("-o", "--output", help="Output .prx filename")
     parser.add_argument("-t", "--threads", type=int, default=2, help="Number of concurrent harness threads (default: 2)")
@@ -84,6 +165,7 @@ def main():
 
     output_prx = args.output if args.output else os.path.splitext(args.c_file)[0] + ".prx"
     generate_harness(args.c_file, output_prx, args.threads)
+
 
 if __name__ == "__main__":
     main()
