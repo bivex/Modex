@@ -12,8 +12,10 @@
 ---
 
 ## 📋 Table of Contents
+- [Why Modex? (Main Problems Solved)](#-why-modex-main-problems-solved)
 - [Key Features](#-key-features)
-- [How It Works](#-how-it-works)
+- [How It Works & Workflow](#-how-it-works--workflow)
+- [Practical Code Extraction Example](#-practical-code-extraction-example)
 - [Prerequisites](#-prerequisites)
 - [Building & Installation](#-building--installation)
 - [Quick Start Example](#-quick-start-example)
@@ -21,6 +23,23 @@
 - [Repository Structure](#-repository-structure)
 - [Documentation](#-documentation)
 - [License & Authors](#-license--authors)
+
+---
+
+## ❓ Why Modex? (Main Problems Solved)
+
+### 1. Bridge Between Specification and Real Code
+Writing Promela models by hand is great for algorithms on paper, but production applications are written in **C**. Manual translation from C to Promela introduces human errors, misses edge cases, and creates a discrepancy between the verified model and actual code. 
+- **Modex Solution**: Mechanically parses raw `.c` source files and generates `.pml` Promela models automatically.
+
+### 2. Direct Software Model Checking of Production C Code
+Modex translates real-world C constructs into formal semantics:
+- Variables, pointers, and custom data structures (`struct`).
+- Control flow statements (`for`, `while`, `if-else`, function calls).
+- Concurrency primitives (`pthreads`, mutexes, condition variables, semaphores).
+
+### 3. Native C Embedding in Spin (`c_code` / `c_expr`)
+Spin supports executing pure C snippets inside its generated verifier (`pan.c`). Modex leverages Spin's `c_code { ... }`, `c_expr { ... }`, and `c_state` constructs to avoid simulating complex C calculations in Promela, instead executing them directly during state space exploration.
 
 ---
 
@@ -33,24 +52,51 @@
 
 ---
 
-## ⚙️ How It Works
+## 🔄 How It Works & Workflow
 
 ```
-                     ┌──────────────────┐
-   C Source (.c) --->│                  │
-                     │      MODEX       │───> Promela Model (_model.pml)
- Harness File (.prx)─>│                  │
-                     └──────────────────┘
-                               │
-                               ▼
-                     ┌──────────────────┐
-                     │   SPIN CHECKER   │───> Verification Results
-                     └──────────────────┘
+   [ Source C Code (app.c) ]
+               │
+               ▼  (Modex + Harness app.prx / Lookup Table)
+   [ Generated Promela Model (app.pml) ]
+               │
+               ▼  (spin -a app.pml)
+   [ C Verifier Source (pan.c) ]
+               │
+               ▼  (gcc -O3 -o pan pan.c && ./pan)
+   [ 🎯 100% Proof of No Deadlocks / Race Conditions in C Code ]
 ```
 
-1. **Input**: ANSI C code files + a `.prx` test-harness configuration script.
-2. **Extraction**: Modex parses the C code into an AST, applies abstractions specified in the `.prx` file, and emits a Promela model file (`_model.pml` / `model.nlut`).
-3. **Verification**: Spin compiles the model into a verifier (`pan.c`) to check for deadlocks, race conditions, memory bounds, or LTL claims.
+1. **Input**: ANSI C source files + `.prx` test-harness configuration script.
+2. **Extraction**: Modex parses C code into an AST, applies harness-defined abstractions, and emits a Promela model file (`_model.pml` / `model.nlut`).
+3. **Verification**: Spin compiles the model into `pan.c`, which is compiled with `gcc` and executed to verify state space, checking for deadlocks, race conditions, memory bounds, or LTL claims.
+
+---
+
+## 📊 Practical Code Extraction Example
+
+Consider a thread-safe message queue implemented in C:
+
+```c
+/* Real C code: queue.c */
+void push_msg(Queue *q, Message *msg) {
+    pthread_mutex_lock(&q->lock);
+    while (q->count == MAX_QUEUE) {
+        pthread_cond_wait(&q->not_full, &q->lock);
+    }
+    q->buffer[q->tail] = msg;
+    q->tail = (q->tail + 1) % MAX_QUEUE;
+    q->count++;
+    pthread_cond_signal(&q->not_empty);
+    pthread_mutex_unlock(&q->lock);
+}
+```
+
+### What Modex does:
+1. Parses `queue.c`.
+2. Maps `pthread_mutex_lock` and `pthread_cond_wait` into semantic Promela primitives (or wraps them in `c_code` blocks).
+3. Generates the `.pml` file for Spin.
+4. Spin tests **all possible concurrent interleavings** across dozens of threads to mathematically guarantee freedom from deadlocks and ring buffer overflows!
 
 ---
 
