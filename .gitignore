@@ -27,6 +27,11 @@ model
 model*.trail
 _model.pml
 
+# PVS-Studio static analysis artifacts
+compile_commands.json
+pvs.log
+pvs_report.*
+
 # OS & Editor temporary files
 .DS_Store
 .idea/
