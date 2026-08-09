@@ -6,8 +6,8 @@
 #
 #	Use the script make_pc to compile for a Windows PC
 #
-CC     = gcc # -Wall # -m32
-CFLAGS = -g
+CC     = gcc
+CFLAGS = -O3 -flto
 CPPFLAGS =
 # default values:
 # CPPFLAGS = -UPC -DCPP=\"gcc -E\" -DDEFAULT_LUT=\"/usr/local/modex/defaults.lut\"
