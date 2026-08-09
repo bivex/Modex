@@ -259,7 +259,8 @@ It extracts global state variables, function signatures, and sets up a parallel 
 
 ## 📚 Documentation
 
-- Detailed user documentation: [`Manual/MANUAL.html`](Manual/MANUAL.html)
+- 📖 **[Modex Verification Guide](Manual/MODEX_GUIDE.md)**: Complete step-by-step tutorial on C code extraction, harness generation, and Spin verification.
+- Detailed HTML user manual: [`Manual/MANUAL.html`](Manual/MANUAL.html)
 - Theoretical background & Spin documentation: [http://spinroot.com/modex](http://spinroot.com/modex)
 
 ---
