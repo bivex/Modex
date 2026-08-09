@@ -18,6 +18,7 @@
 - [Practical Code Extraction Example](#-practical-code-extraction-example)
 - [Prerequisites](#-prerequisites)
 - [Building & Installation](#-building--installation)
+- [🧪 Empirical Verification & Execution Details](#-empirical-verification--execution-details)
 - [Quick Start Example](#-quick-start-example)
 - [Test Harness (.prx) Overview](#-test-harness-prx-overview)
 - [Repository Structure](#-repository-structure)
@@ -105,7 +106,7 @@ void push_msg(Queue *q, Message *msg) {
 To build and run Modex, you need:
 
 - **C Compiler**: `gcc` or `clang`
-- **Parser Generator**: `bison`
+- **Parser Generator**: `bison` (compatible with Bison 3.x+ via `%pure_parser` directive in `gram.y`)
 - **Lexical Analyzer**: `flex`
 - **Build Automation**: `make`
 - **Model Checker** *(for running extracted models)*: [Spin](http://spinroot.com)
@@ -131,6 +132,42 @@ To install `modex` binary and default lookup table to `/usr/local/bin` and `/usr
 ```bash
 cd Src
 sudo make install
+```
+
+---
+
+## 🧪 Empirical Verification & Execution Details
+
+The repository includes automated verification scripts in [`Scripts/verify`](Scripts/verify) that demonstrate the end-to-end extraction and model-checking loop.
+
+### End-to-End Verification Pipeline:
+Running `verify` executes the full pipeline automatically:
+1. **Extraction**: Invokes `modex -F <file>.prx <file>.c` to produce the Promela file (`<file>.M`) and run script (`_modex_.run`).
+2. **Compilation**: Invokes `sh _modex_.run` which calls `spin -a` to generate `pan.c`, then compiles `pan.c` with `gcc`.
+3. **Execution**: Runs `./pan` to explore the complete state space.
+4. **Replay & Diagnostics**: If a deadlock or assertion fails, invokes `./pan -C` to replay the exact sequence of C statement executions that led to the fault.
+
+### Execution Output Example (`Manual/mutex.c`):
+When verifying a flawed mutual exclusion algorithm ([`Manual/mutex.c`](Manual/mutex.c)):
+```bash
+PATH=../Src:$PATH ../Scripts/verify mutex.c
+```
+Modex extracts the model and Spin identifies a race condition within 44 steps:
+```text
+pan:1: c_code line 84 precondition false: (now.count==1) (at depth 323)
+State-vector 128 byte, depth reached 323, errors: 76
+
+Error Found:
+1:  run p_user(1)
+2:  run p_user(2)
+41: p_user(4): [ count++; ]
+43: p_user(3): [ count++; ]
+pan: precondition false: (count==1)
+```
+
+To clean generated verification artifacts (`pan.*`, `model.trail`, `*.M`, `*.nlut`), run:
+```bash
+Scripts/verify clean
 ```
 
 ---
@@ -207,6 +244,7 @@ Modex/
 ├── Manual/               # User manual (MANUAL.html) and harness tutorials
 ├── Examples/             # Practical C code extraction examples
 └── Scripts/              # Automated verification helper scripts
+    └── verify            # Model extraction and Spin execution wrapper
 ```
 
 ---
